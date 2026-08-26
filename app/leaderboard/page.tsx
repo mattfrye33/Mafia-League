@@ -1,13 +1,22 @@
 import { requireProfile } from "@/lib/auth";
 import { listActiveProfiles } from "@/lib/services/profiles";
 import { getLeagueCareerStats } from "@/lib/services/careerStats";
+import { getLeagueSummary, getLeagueActionTotals } from "@/lib/services/leagueStats";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { LeaderboardTable, type LeaderboardRow } from "@/components/leaderboard/LeaderboardTable";
+import { LeagueSummaryCards } from "@/components/leaderboard/LeagueSummaryCards";
+import { MafiaVsCivilianCard } from "@/components/leaderboard/MafiaVsCivilianCard";
+import { LeagueActionStats } from "@/components/leaderboard/LeagueActionStats";
 
 export default async function LeaderboardPage() {
   const { supabase } = await requireProfile();
 
-  const [profiles, statsByPlayer] = await Promise.all([listActiveProfiles(supabase), getLeagueCareerStats(supabase)]);
+  const [profiles, statsByPlayer, summary, actionTotals] = await Promise.all([
+    listActiveProfiles(supabase),
+    getLeagueCareerStats(supabase),
+    getLeagueSummary(supabase),
+    getLeagueActionTotals(supabase),
+  ]);
 
   const rows: LeaderboardRow[] = profiles.map((p) => ({
     playerId: p.id,
@@ -16,7 +25,7 @@ export default async function LeaderboardPage() {
     stats: statsByPlayer.get(p.id) ?? null,
   }));
 
-  const hasAnyGames = rows.some((r) => r.stats && r.stats.gamesPlayed > 0);
+  const hasAnyGames = summary.gamesPlayed > 0;
 
   return (
     <div className="space-y-6">
@@ -28,7 +37,12 @@ export default async function LeaderboardPage() {
       {!hasAnyGames ? (
         <EmptyState title="No official games completed yet" body="The leaderboard fills in once games are finished." />
       ) : (
-        <LeaderboardTable rows={rows} />
+        <>
+          <LeagueSummaryCards summary={summary} />
+          <MafiaVsCivilianCard summary={summary} />
+          <LeagueActionStats totals={actionTotals} />
+          <LeaderboardTable rows={rows} />
+        </>
       )}
     </div>
   );

@@ -210,6 +210,15 @@ export interface PlayerCareerStats {
   kamikazeGames: number;
   silencerGames: number;
   civilianRoleGames: number;
+  /** Survival/death breakdown, derived from game_players.alive/death_reason —
+   * never inferred beyond what was actually recorded. */
+  timesSurvived: number;
+  totalDeaths: number;
+  timesKilledByMafia: number;
+  timesVotedOut: number;
+  timesSniped: number;
+  timesKilledByKamikaze: number;
+  timesManuallyKilled: number;
 }
 
 export const EMPTY_CAREER_STATS: PlayerCareerStats = {
@@ -238,4 +247,11 @@ export const EMPTY_CAREER_STATS: PlayerCareerStats = {
   kamikazeGames: 0,
   silencerGames: 0,
   civilianRoleGames: 0,
+  timesSurvived: 0,
+  totalDeaths: 0,
+  timesKilledByMafia: 0,
+  timesVotedOut: 0,
+  timesSniped: 0,
+  timesKilledByKamikaze: 0,
+  timesManuallyKilled: 0,
 };

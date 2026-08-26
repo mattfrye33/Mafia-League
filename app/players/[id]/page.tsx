@@ -96,6 +96,20 @@ export default async function PlayerProfilePage({ params }: PageProps<"/players/
         </Card>
 
         <Card>
+          <CardTitle>Survival Stats</CardTitle>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <StatTile label="Games Played" value={stats.gamesPlayed} />
+            <StatTile label="Survived" value={stats.timesSurvived} />
+            <StatTile label="Total Deaths" value={stats.totalDeaths} />
+            <StatTile label="Killed by Mafia" value={stats.timesKilledByMafia} />
+            <StatTile label="Voted Out" value={stats.timesVotedOut} />
+            <StatTile label="Sniped" value={stats.timesSniped} />
+            <StatTile label="Kamikaze" value={stats.timesKilledByKamikaze} />
+            <StatTile label="Manually Killed" value={stats.timesManuallyKilled} />
+          </div>
+        </Card>
+
+        <Card>
           <CardTitle>Other</CardTitle>
           <div className="mt-4 grid grid-cols-2 gap-3">
             <StatTile label="Times Recruited" value={stats.timesRecruited} />

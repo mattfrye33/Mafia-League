@@ -14,17 +14,18 @@ export interface LeaderboardRow {
   stats: PlayerCareerStats | null;
 }
 
-type Category =
+type Group = "primary" | "specialty";
+
+type Category = { key: string; label: string; group: Group } & (
   | {
-      key: string;
-      label: string;
       kind: "rate";
       numerator: (s: PlayerCareerStats) => number;
       denominator: (s: PlayerCareerStats) => number;
       extra: (s: PlayerCareerStats) => string;
     }
-  | { key: string; label: string; kind: "count"; value: (s: PlayerCareerStats) => number }
-  | { key: string; label: string; kind: "duration"; value: (s: PlayerCareerStats) => number };
+  | { kind: "count"; value: (s: PlayerCareerStats) => number }
+  | { kind: "duration"; value: (s: PlayerCareerStats) => number }
+);
 
 // Percentages always carry their sample size in `extra` so a 1-for-1 record
 // never reads the same as a real 10-game trend.
@@ -32,6 +33,7 @@ const CATEGORIES: Category[] = [
   {
     key: "win_pct",
     label: "Win %",
+    group: "primary",
     kind: "rate",
     numerator: (s) => s.wins,
     denominator: (s) => s.gamesPlayed,
@@ -40,6 +42,7 @@ const CATEGORIES: Category[] = [
   {
     key: "mafia_win_pct",
     label: "Mafia Win %",
+    group: "primary",
     kind: "rate",
     numerator: (s) => s.mafiaWins,
     denominator: (s) => s.mafiaGames,
@@ -48,6 +51,7 @@ const CATEGORIES: Category[] = [
   {
     key: "civilian_win_pct",
     label: "Civilian Win %",
+    group: "primary",
     kind: "rate",
     numerator: (s) => s.civilianWins,
     denominator: (s) => s.civilianGames,
@@ -56,17 +60,28 @@ const CATEGORIES: Category[] = [
   {
     key: "godfather",
     label: "Godfather",
+    group: "primary",
     kind: "rate",
     numerator: (s) => s.godfatherWins,
     denominator: (s) => s.godfatherGames,
     extra: (s) => `${s.godfatherWins} wins / ${s.godfatherGames} games`,
   },
-  { key: "successful_recruits", label: "Successful Recruits", kind: "count", value: (s) => s.successfulRecruits },
-  { key: "successful_snipes", label: "Successful Snipes", kind: "count", value: (s) => s.successfulSnipes },
-  { key: "medic_saves", label: "Medic Saves", kind: "count", value: (s) => s.medicSaves },
-  { key: "kamikaze_kills", label: "Kamikaze Kills", kind: "count", value: (s) => s.kamikazeKills },
-  { key: "mafia_hours", label: "Mafia Hours", kind: "duration", value: (s) => s.totalMafiaHoursSeconds },
-  { key: "times_recruited", label: "Times Recruited", kind: "count", value: (s) => s.timesRecruited },
+  { key: "successful_recruits", label: "Successful Recruits", group: "primary", kind: "count", value: (s) => s.successfulRecruits },
+  { key: "successful_snipes", label: "Successful Snipes", group: "primary", kind: "count", value: (s) => s.successfulSnipes },
+  { key: "medic_saves", label: "Medic Saves", group: "primary", kind: "count", value: (s) => s.medicSaves },
+  { key: "kamikaze_kills", label: "Kamikaze Kills", group: "primary", kind: "count", value: (s) => s.kamikazeKills },
+  { key: "mafia_hours", label: "Mafia Hours", group: "primary", kind: "duration", value: (s) => s.totalMafiaHoursSeconds },
+  { key: "times_recruited", label: "Times Recruited", group: "primary", kind: "count", value: (s) => s.timesRecruited },
+
+  // Specialty leaderboards — fun cumulative/death totals not already covered above.
+  { key: "most_mafia_wins", label: "Most Mafia Wins", group: "specialty", kind: "count", value: (s) => s.mafiaWins },
+  { key: "most_civilian_wins", label: "Most Civilian Wins", group: "specialty", kind: "count", value: (s) => s.civilianWins },
+  { key: "most_godfather_wins", label: "Most Godfather Wins", group: "specialty", kind: "count", value: (s) => s.godfatherWins },
+  { key: "most_priest_uses", label: "Most Priest Uses", group: "specialty", kind: "count", value: (s) => s.priestUses },
+  { key: "most_silenced", label: "Most Silenced", group: "specialty", kind: "count", value: (s) => s.timesSilenced },
+  { key: "most_killed_by_mafia", label: "Most Killed by Mafia", group: "specialty", kind: "count", value: (s) => s.timesKilledByMafia },
+  { key: "most_voted_out", label: "Most Voted Out", group: "specialty", kind: "count", value: (s) => s.timesVotedOut },
+  { key: "most_sniped", label: "Most Sniped", group: "specialty", kind: "count", value: (s) => s.timesSniped },
 ];
 
 export function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) {
@@ -96,23 +111,37 @@ export function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) {
     })
     .sort((a, b) => b.sortValue - a.sortValue);
 
+  const primary = CATEGORIES.filter((c) => c.group === "primary");
+  const specialty = CATEGORIES.filter((c) => c.group === "specialty");
+
+  const tabRow = (categories: Category[]) => (
+    <div className="flex flex-wrap gap-2">
+      {categories.map((c) => (
+        <button
+          key={c.key}
+          onClick={() => setActiveKey(c.key)}
+          className={cn(
+            "rounded-full border px-3 py-1.5 text-xs font-medium transition",
+            c.key === activeKey
+              ? "border-gold/50 bg-gold/15 text-gold-soft"
+              : "border-border bg-surface-raised text-muted hover:text-foreground",
+          )}
+        >
+          {c.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {CATEGORIES.map((c) => (
-          <button
-            key={c.key}
-            onClick={() => setActiveKey(c.key)}
-            className={cn(
-              "rounded-full border px-3 py-1.5 text-xs font-medium transition",
-              c.key === activeKey
-                ? "border-gold/50 bg-gold/15 text-gold-soft"
-                : "border-border bg-surface-raised text-muted hover:text-foreground",
-            )}
-          >
-            {c.label}
-          </button>
-        ))}
+      <div className="space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Player Leaderboards</p>
+        {tabRow(primary)}
+      </div>
+      <div className="space-y-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Specialty Leaderboards</p>
+        {tabRow(specialty)}
       </div>
 
       <Card className="p-0">

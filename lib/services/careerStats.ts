@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database.types";
-import { EMPTY_CAREER_STATS, type Alignment, type PlayerCareerStats } from "@/types/domain";
+import { EMPTY_CAREER_STATS, type Alignment, type DeathReason, type PlayerCareerStats } from "@/types/domain";
 import { throwIfError } from "@/lib/supabase/errors";
 
 type Client = SupabaseClient<Database>;
@@ -9,13 +9,15 @@ const OFFICIAL_GAME_PLAYER_SELECT =
   // game_players<->games now has 3 FKs (game_id, plus games' two pending_*
   // columns pointing back at game_players), so the embed must say which —
   // "games!game_id" — or PostgREST can't tell them apart (PGRST201).
-  "id, player_id, current_alignment, recruited, game:games!game_id(id, status, is_test, winner_alignment, official_duration_seconds), role:roles(slug)";
+  "id, player_id, current_alignment, recruited, alive, death_reason, game:games!game_id(id, status, is_test, winner_alignment, official_duration_seconds), role:roles(slug)";
 
-interface OfficialGamePlayerRow {
+export interface OfficialGamePlayerRow {
   id: string;
   player_id: string | null;
   current_alignment: Alignment;
   recruited: boolean;
+  alive: boolean;
+  death_reason: DeathReason | null;
   game: {
     id: string;
     status: string;
@@ -28,6 +30,15 @@ interface OfficialGamePlayerRow {
 
 function isOfficialRow(r: { game: { status: string; is_test: boolean } | null }): boolean {
   return r.game?.status === "completed" && r.game?.is_test === false;
+}
+
+/** Every real player's official completed-game participation rows, league-wide
+ * — the one shared fetch behind both the Leaderboard's per-player stats and
+ * the All-Time League Stats aggregates, so both read the exact same rows. */
+export async function fetchAllOfficialGamePlayerRows(supabase: Client): Promise<OfficialGamePlayerRow[]> {
+  const { data, error } = await supabase.from("game_players").select(OFFICIAL_GAME_PLAYER_SELECT);
+  throwIfError(error);
+  return ((data ?? []) as OfficialGamePlayerRow[]).filter((r) => isOfficialRow(r) && r.player_id);
 }
 
 interface StatAction {
@@ -68,6 +79,12 @@ function computeStatsFromRows(rows: OfficialGamePlayerRow[], actions: StatAction
   let kamikazeGames = 0;
   let silencerGames = 0;
   let civilianRoleGames = 0;
+  let timesSurvived = 0;
+  let timesKilledByMafia = 0;
+  let timesVotedOut = 0;
+  let timesSniped = 0;
+  let timesKilledByKamikaze = 0;
+  let timesManuallyKilled = 0;
 
   for (const r of rows) {
     const won = r.current_alignment === r.game!.winner_alignment;
@@ -105,11 +122,44 @@ function computeStatsFromRows(rows: OfficialGamePlayerRow[], actions: StatAction
     }
     if (r.recruited) timesRecruited++;
     totalMafiaHoursSeconds += r.game!.official_duration_seconds ?? 0;
+
+    if (r.alive) {
+      timesSurvived++;
+    } else {
+      switch (r.death_reason) {
+        case "mafia_kill":
+          timesKilledByMafia++;
+          break;
+        case "vote":
+          timesVotedOut++;
+          break;
+        case "snipe":
+          timesSniped++;
+          break;
+        case "kamikaze":
+          timesKilledByKamikaze++;
+          break;
+        case "manual":
+          timesManuallyKilled++;
+          break;
+      }
+    }
   }
 
-  const successfulRecruits = actionList.filter(
+  // A recruit action only counts as "successful" if the Cops didn't catch it
+  // that same round (resolve_night records the catch, if any, in its meta) —
+  // a caught recruit is reverted to Civilian and must not count as a win for
+  // the Godfather.
+  const recruitAttempts = actionList.filter(
     (a) => a.action_type === "recruit" && belongsToPlayer(a.actor_game_player_id),
-  ).length;
+  );
+  const successfulRecruits = recruitAttempts.filter((r) => {
+    const resolve = actions.find(
+      (a) => a.action_type === "resolve_night" && a.game_id === r.game_id && a.round === r.round,
+    );
+    const meta = (resolve?.payload as { meta?: Record<string, unknown> } | null)?.meta;
+    return meta?.recruitCaughtGamePlayerId !== r.target_game_player_id;
+  }).length;
   const successfulSnipes = actionList.filter(
     (a) => a.action_type === "snipe_confirmed" && belongsToPlayer(a.actor_game_player_id),
   ).length;
@@ -166,6 +216,13 @@ function computeStatsFromRows(rows: OfficialGamePlayerRow[], actions: StatAction
     kamikazeGames,
     silencerGames,
     civilianRoleGames,
+    timesSurvived,
+    totalDeaths: gamesPlayed - timesSurvived,
+    timesKilledByMafia,
+    timesVotedOut,
+    timesSniped,
+    timesKilledByKamikaze,
+    timesManuallyKilled,
   };
 }
 
@@ -202,10 +259,7 @@ export async function getPlayerCareerStats(supabase: Client, playerId: string): 
  * computeStatsFromRows math as the single-player path above.
  */
 export async function getLeagueCareerStats(supabase: Client): Promise<Map<string, PlayerCareerStats>> {
-  const { data: rows, error } = await supabase.from("game_players").select(OFFICIAL_GAME_PLAYER_SELECT);
-  throwIfError(error);
-
-  const official = ((rows ?? []) as OfficialGamePlayerRow[]).filter((r) => isOfficialRow(r) && r.player_id);
+  const official = await fetchAllOfficialGamePlayerRows(supabase);
 
   const { data: actions, error: actionsError } = await supabase.rpc("get_official_actions_for_stats");
   throwIfError(actionsError);
