@@ -4,6 +4,7 @@ import type { Alignment, DeathReason, GamePhase, GamePlayerWithDetails } from "@
 import { throwIfError } from "@/lib/supabase/errors";
 import { participantDisplay, roleDisplayLabel } from "@/lib/utils";
 import { getGame, getGamePlayers } from "@/lib/services/games";
+import { wasRecruitCaught } from "@/lib/services/recruitCatch";
 
 type Client = SupabaseClient<Database>;
 
@@ -487,30 +488,20 @@ export async function resolveNight(supabase: Client, gameId: string, narratorId:
   if (recruitAction?.target_game_player_id) {
     const recruitTargetId = recruitAction.target_game_player_id;
 
-    const caughtByInvestigate = (roundActions ?? []).some(
-      (a) =>
-        a.action_type === "cop_investigate" &&
-        a.target_game_player_id === recruitTargetId &&
-        actionMeta(a).result === "MAFIA",
-    );
-
     const recruitTargetPlayers = await getGamePlayers(supabase, gameId);
     const recruitTarget = recruitTargetPlayers.find((p) => p.id === recruitTargetId);
-    // Cross Check only ever reports "at least one Dirty Cop exists" for the
-    // whole group, never which one — so it can only be blamed on THIS
-    // round's fresh recruit if they're the ONLY dirty Cop it could be
-    // detecting. If another living Cop is already Mafia-aligned (recruited
-    // in an earlier round), a MAFIA_FOUND result is already fully explained
-    // by them and must not falsely revert an unrelated, successful recruit.
-    const otherLivingDirtyCop = recruitTargetPlayers.some(
-      (p) => p.alive && p.role.slug === "cop" && p.id !== recruitTargetId && p.current_alignment === "mafia",
+    const otherLivingCops = recruitTargetPlayers.filter(
+      (p) => p.alive && p.role.slug === "cop" && p.id !== recruitTargetId,
     );
-    const caughtByCrossCheck =
-      recruitTarget?.role.slug === "cop" &&
-      !otherLivingDirtyCop &&
-      (roundActions ?? []).some((a) => a.action_type === "cop_cross_check" && actionMeta(a).result === "MAFIA_FOUND");
 
-    if (caughtByInvestigate || caughtByCrossCheck) {
+    const catchResult = wasRecruitCaught({
+      recruitTargetId,
+      recruitTargetRoleSlug: recruitTarget?.role.slug ?? "",
+      roundActions: roundActions ?? [],
+      otherLivingCops: otherLivingCops.map((p) => ({ id: p.id, current_alignment: p.current_alignment })),
+    });
+
+    if (catchResult.caught) {
       const before = await patchGamePlayer(supabase, recruitTargetId, {
         current_alignment: "civilian",
         recruited: false,
@@ -519,7 +510,7 @@ export async function resolveNight(supabase: Client, gameId: string, narratorId:
       patches.push({ table: "game_players", id: recruitTargetId, before });
       result.recruitCaught = { gamePlayerId: recruitTargetId };
       meta.recruitCaughtGamePlayerId = recruitTargetId;
-      meta.recruitCaughtBy = caughtByInvestigate ? "cop_investigate" : "cop_cross_check";
+      meta.recruitCaughtBy = catchResult.by;
     }
   }
 

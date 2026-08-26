@@ -41,7 +41,7 @@ export async function fetchAllOfficialGamePlayerRows(supabase: Client): Promise<
   return ((data ?? []) as OfficialGamePlayerRow[]).filter((r) => isOfficialRow(r) && r.player_id);
 }
 
-interface StatAction {
+export interface StatAction {
   game_id: string;
   round: number;
   action_type: string;
@@ -57,7 +57,7 @@ interface StatAction {
  * `actions` may be a superset (e.g. the whole league's action log) since
  * every check below re-scopes to `rows`' own game_player ids.
  */
-function computeStatsFromRows(rows: OfficialGamePlayerRow[], actions: StatAction[]): PlayerCareerStats {
+export function computeStatsFromRows(rows: OfficialGamePlayerRow[], actions: StatAction[]): PlayerCareerStats {
   if (rows.length === 0) return { ...EMPTY_CAREER_STATS };
 
   const gamePlayerIds = new Set(rows.map((r) => r.id));

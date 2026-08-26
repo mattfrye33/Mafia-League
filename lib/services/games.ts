@@ -138,8 +138,17 @@ export async function createDraftGame(supabase: Client, input: CreateDraftGameIn
   return game!.id;
 }
 
-/** Reshuffles which player has which role, keeping the exact same role counts. */
+/** Reshuffles which player has which role, keeping the exact same role counts.
+ * Draft-only: once a game is active, resetting a role also resets
+ * current_alignment to that role's default, which would silently erase a
+ * successful recruit — so this must never be reachable after startGame(). */
 export async function rerollGameRoles(supabase: Client, gameId: string): Promise<void> {
+  const game = await getGame(supabase, gameId);
+  if (!game) throw new Error("Game not found.");
+  if (game.status !== "draft") {
+    throw new Error("Roles can only be reshuffled while the game is still in draft.");
+  }
+
   const { data: players, error } = await supabase
     .from("game_players")
     .select("id, base_role_id")
@@ -165,7 +174,23 @@ export async function rerollGameRoles(supabase: Client, gameId: string): Promise
   }
 }
 
+/** Draft-only for the same reason as rerollGameRoles() above — changing a
+ * role after the game has started would reset current_alignment and could
+ * silently erase a successful recruit. */
 export async function updateGamePlayerRole(supabase: Client, gamePlayerId: string, roleId: string): Promise<void> {
+  const { data: gamePlayer, error: gamePlayerError } = await supabase
+    .from("game_players")
+    .select("game_id")
+    .eq("id", gamePlayerId)
+    .single();
+  throwIfError(gamePlayerError);
+
+  const game = await getGame(supabase, gamePlayer.game_id);
+  if (!game) throw new Error("Game not found.");
+  if (game.status !== "draft") {
+    throw new Error("A player's role can only be changed while the game is still in draft.");
+  }
+
   const roles = await listRoles(supabase);
   const role = roles.find((r) => r.id === roleId);
   if (!role) throw new Error("Role not found.");
