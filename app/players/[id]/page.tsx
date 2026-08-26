@@ -1,12 +1,18 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireProfile } from "@/lib/auth";
 import { getProfile } from "@/lib/services/profiles";
+import { getPlayerCareerStats, getRecentGames } from "@/lib/services/careerStats";
+import { getPlayerBadges, getFeaturedBadges } from "@/lib/services/badges";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { StatTile } from "@/components/ui/StatTile";
 import { PermissionBadge } from "@/components/ui/PermissionBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { EMPTY_CAREER_STATS, YEAR_LABELS } from "@/types/domain";
-import { formatDuration, formatPct, initials } from "@/lib/utils";
+import { Avatar } from "@/components/ui/Avatar";
+import { FeaturedBadges } from "@/components/players/FeaturedBadges";
+import { AchievementsGrid } from "@/components/players/AchievementsGrid";
+import { YEAR_LABELS } from "@/types/domain";
+import { formatDuration, formatPct } from "@/lib/utils";
 
 export default async function PlayerProfilePage({ params }: PageProps<"/players/[id]">) {
   const { id } = await params;
@@ -15,18 +21,21 @@ export default async function PlayerProfilePage({ params }: PageProps<"/players/
 
   if (!player) notFound();
 
-  // Career statistics are derived from completed games (Phase 3/4). Until
-  // then every profile shows a real, honest zero state rather than fake data.
-  const stats = EMPTY_CAREER_STATS;
+  const [stats, recentGames, { earned, locked }, featuredBadges] = await Promise.all([
+    getPlayerCareerStats(supabase, id),
+    getRecentGames(supabase, id),
+    getPlayerBadges(supabase, id),
+    getFeaturedBadges(supabase, id),
+  ]);
+
+  const name = player.nickname || player.full_name;
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-4">
-        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-border bg-surface-raised font-heading text-2xl text-gold">
-          {initials(player.nickname || player.full_name)}
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
+      <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
+        <Avatar url={player.avatar_url} name={name} size="lg" />
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
             <h1 className="font-heading text-2xl text-foreground">{player.full_name}</h1>
             <PermissionBadge level={player.permission_level} />
           </div>
@@ -34,6 +43,8 @@ export default async function PlayerProfilePage({ params }: PageProps<"/players/
             &ldquo;{player.nickname}&rdquo; &middot; {YEAR_LABELS[player.year]}
             {!player.active && " · Inactive"}
           </p>
+          {player.bio && <p className="max-w-md text-sm text-foreground/90">{player.bio}</p>}
+          <FeaturedBadges badges={featuredBadges} />
         </div>
       </div>
 
@@ -85,10 +96,29 @@ export default async function PlayerProfilePage({ params }: PageProps<"/players/
         <Card>
           <CardTitle>Recent Games</CardTitle>
           <div className="mt-4">
-            <EmptyState title="No games played yet" />
+            {recentGames.length === 0 ? (
+              <EmptyState title="No games played yet" />
+            ) : (
+              <div className="space-y-2">
+                {recentGames.map((g) => (
+                  <Link
+                    key={g.gameId}
+                    href={`/play/games/${g.gameId}`}
+                    className="flex items-center justify-between rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm hover:border-gold/40"
+                  >
+                    <span className="text-foreground">
+                      Game #{g.leagueNumber ?? "—"} &middot; {g.roleName}
+                    </span>
+                    <span className={g.won ? "text-civilian" : "text-red-soft"}>{g.won ? "Won" : "Lost"}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         </Card>
       </div>
+
+      <AchievementsGrid earned={earned} locked={locked} />
     </div>
   );
 }

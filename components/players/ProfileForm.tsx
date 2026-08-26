@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Field, inputClass } from "@/components/ui/AuthShell";
 import { Button } from "@/components/ui/Button";
-import { PLAYER_YEARS, YEAR_LABELS, type PlayerYear, type Profile } from "@/types/domain";
-import { initials } from "@/lib/utils";
+import { Avatar } from "@/components/ui/Avatar";
+import { ALLOWED_AVATAR_TYPES, MAX_AVATAR_UPLOAD_BYTES, resizeImageToSquareJpeg } from "@/lib/clientImage";
+import { BIO_MAX_LENGTH, PLAYER_YEARS, YEAR_LABELS, type PlayerYear, type Profile } from "@/types/domain";
 
 export function ProfileForm({ profile }: { profile: Profile }) {
   const router = useRouter();
@@ -15,6 +16,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
   const [fullName, setFullName] = useState(profile.full_name);
   const [nickname, setNickname] = useState(profile.nickname);
   const [year, setYear] = useState<PlayerYear>(profile.year);
+  const [bio, setBio] = useState(profile.bio ?? "");
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -24,26 +26,41 @@ export function ProfileForm({ profile }: { profile: Profile }) {
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
 
-    setUploading(true);
     setError(null);
-    const supabase = createClient();
-    const ext = file.name.split(".").pop();
-    const path = `${profile.id}/avatar.${ext}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from("avatars")
-      .upload(path, file, { upsert: true });
-
-    if (uploadError) {
-      setUploading(false);
-      setError(uploadError.message);
+    if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
+      setError("Please choose a JPEG, PNG, WebP, or GIF image.");
+      return;
+    }
+    if (file.size > MAX_AVATAR_UPLOAD_BYTES) {
+      setError("That image is too large — please choose one under 8MB.");
       return;
     }
 
-    const { data } = supabase.storage.from("avatars").getPublicUrl(path);
-    setAvatarUrl(`${data.publicUrl}?t=${Date.now()}`);
-    setUploading(false);
+    setUploading(true);
+    try {
+      const resized = await resizeImageToSquareJpeg(file);
+      const supabase = createClient();
+      const path = `${profile.id}/avatar.jpg`;
+
+      const { error: uploadError } = await supabase.storage.from("avatars").upload(path, resized, {
+        upsert: true,
+        contentType: "image/jpeg",
+      });
+      if (uploadError) {
+        setError(uploadError.message);
+        return;
+      }
+
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      setAvatarUrl(`${data.publicUrl}?t=${Date.now()}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not process image.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -55,7 +72,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
     const supabase = createClient();
     const { error: updateError } = await supabase
       .from("profiles")
-      .update({ full_name: fullName, nickname, year, avatar_url: avatarUrl })
+      .update({ full_name: fullName, nickname, year, avatar_url: avatarUrl, bio: bio.trim() || null })
       .eq("id", profile.id);
 
     setSaving(false);
@@ -72,19 +89,12 @@ export function ProfileForm({ profile }: { profile: Profile }) {
   return (
     <form onSubmit={handleSubmit} className="max-w-md space-y-4">
       <div className="flex items-center gap-4">
-        {avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={avatarUrl} alt="" className="h-16 w-16 rounded-full object-cover border border-border" />
-        ) : (
-          <div className="flex h-16 w-16 items-center justify-center rounded-full border border-border bg-surface-raised font-heading text-xl text-gold">
-            {initials(nickname || fullName)}
-          </div>
-        )}
+        <Avatar url={avatarUrl} name={nickname || fullName} size="lg" />
         <div>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept={ALLOWED_AVATAR_TYPES.join(",")}
             className="hidden"
             onChange={handleAvatarChange}
           />
@@ -113,6 +123,16 @@ export function ProfileForm({ profile }: { profile: Profile }) {
             </option>
           ))}
         </select>
+      </Field>
+      <Field label={`Bio (${bio.length}/${BIO_MAX_LENGTH})`}>
+        <textarea
+          className={inputClass}
+          rows={3}
+          maxLength={BIO_MAX_LENGTH}
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          placeholder="A short line about yourself..."
+        />
       </Field>
 
       {error && <p className="text-sm text-red-soft">{error}</p>}

@@ -48,6 +48,7 @@ export interface UpdateOwnProfileInput {
   nickname?: string;
   year?: PlayerYear;
   avatar_url?: string | null;
+  bio?: string | null;
 }
 
 export async function updateOwnProfile(supabase: Client, id: string, input: UpdateOwnProfileInput) {
@@ -66,5 +67,15 @@ export async function setPermissionLevel(
 
 export async function setActive(supabase: Client, id: string, active: boolean) {
   const { error } = await supabase.from("profiles").update({ active }).eq("id", id);
+  throwIfError(error);
+}
+
+/** Admin-only removal of an inappropriate/broken photo — clears the DB
+ * reference so it stops displaying anywhere. The underlying storage file is
+ * left in place rather than hunting down its exact extension to delete it;
+ * an orphaned, unreferenced file in a private per-league bucket isn't worth
+ * the extra complexity here. */
+export async function removeAvatar(supabase: Client, id: string) {
+  const { error } = await supabase.from("profiles").update({ avatar_url: null }).eq("id", id);
   throwIfError(error);
 }

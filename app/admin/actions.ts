@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/auth";
-import { setPermissionLevel, setActive } from "@/lib/services/profiles";
+import { setPermissionLevel, setActive, removeAvatar } from "@/lib/services/profiles";
 import { updateLeagueSettingsAdmin } from "@/lib/services/league";
 import {
   createTestPlayer,
@@ -68,6 +68,14 @@ export async function deleteAllTestPlayersAction() {
   await deleteAllTestPlayers(supabase);
   revalidatePath("/admin");
   revalidatePath("/play/new");
+}
+
+export async function removeAvatarAction(playerId: string) {
+  const { supabase } = await requireProfile("admin");
+  await removeAvatar(supabase, playerId);
+  revalidatePath("/admin");
+  revalidatePath("/players");
+  revalidatePath(`/players/${playerId}`);
 }
 
 export async function deleteGameAdminAction(gameId: string) {

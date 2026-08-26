@@ -17,6 +17,7 @@ export type Database = {
           nickname: string;
           year: string;
           avatar_url: string | null;
+          bio: string | null;
           permission_level: string;
           active: boolean;
           created_at: string;
@@ -28,6 +29,7 @@ export type Database = {
           nickname: string;
           year?: string;
           avatar_url?: string | null;
+          bio?: string | null;
           permission_level?: string;
           active?: boolean;
         };
@@ -36,6 +38,7 @@ export type Database = {
           nickname?: string;
           year?: string;
           avatar_url?: string | null;
+          bio?: string | null;
           permission_level?: string;
           active?: boolean;
         };
@@ -238,7 +241,43 @@ export type Database = {
           godfather_check_count?: number;
           self_save_count?: number;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "game_players_game_id_fkey";
+            columns: ["game_id"];
+            isOneToOne: false;
+            referencedRelation: "games";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "game_players_player_id_fkey";
+            columns: ["player_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "game_players_test_player_id_fkey";
+            columns: ["test_player_id"];
+            isOneToOne: false;
+            referencedRelation: "test_players";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "game_players_base_role_id_fkey";
+            columns: ["base_role_id"];
+            isOneToOne: false;
+            referencedRelation: "roles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "game_players_recruited_by_game_player_id_fkey";
+            columns: ["recruited_by_game_player_id"];
+            isOneToOne: false;
+            referencedRelation: "game_players";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       test_players: {
         Row: {
@@ -259,6 +298,66 @@ export type Database = {
           nickname?: string | null;
         };
         Relationships: [];
+      };
+      badges: {
+        Row: {
+          id: string;
+          slug: string;
+          name: string;
+          description: string;
+          category: string;
+          sort_order: number;
+          active: boolean;
+        };
+        Insert: {
+          id?: string;
+          slug: string;
+          name: string;
+          description: string;
+          category?: string;
+          sort_order?: number;
+          active?: boolean;
+        };
+        Update: {
+          name?: string;
+          description?: string;
+          category?: string;
+          sort_order?: number;
+          active?: boolean;
+        };
+        Relationships: [];
+      };
+      profile_featured_badges: {
+        Row: {
+          profile_id: string;
+          badge_id: string;
+          position: number;
+          created_at: string;
+        };
+        Insert: {
+          profile_id: string;
+          badge_id: string;
+          position: number;
+        };
+        Update: {
+          position?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "profile_featured_badges_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "profile_featured_badges_badge_id_fkey";
+            columns: ["badge_id"];
+            isOneToOne: false;
+            referencedRelation: "badges";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       game_actions: {
         Row: {
@@ -320,6 +419,17 @@ export type Database = {
       verify_access_code: {
         Args: { code: string };
         Returns: boolean;
+      };
+      get_player_stat_actions: {
+        Args: { target_player_id: string };
+        Returns: {
+          game_id: string;
+          round: number;
+          action_type: string;
+          actor_game_player_id: string | null;
+          target_game_player_id: string | null;
+          payload: Json;
+        }[];
       };
     };
     Enums: Record<string, never>;

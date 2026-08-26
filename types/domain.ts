@@ -53,10 +53,23 @@ export interface Profile {
   nickname: string;
   year: PlayerYear;
   avatar_url: string | null;
+  bio: string | null;
   permission_level: PermissionLevel;
   active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export const BIO_MAX_LENGTH = 200;
+
+export interface Badge {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  sort_order: number;
+  active: boolean;
 }
 
 export interface Role {
