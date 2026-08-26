@@ -10,7 +10,7 @@ import {
   deleteTestPlayer,
   deleteAllTestPlayers,
 } from "@/lib/services/testPlayers";
-import { deleteGame } from "@/lib/services/games";
+import { deleteGame, repairGame, repairOfficialGameNumbers, type GameRepairPatch } from "@/lib/services/games";
 import type { PermissionLevel } from "@/types/domain";
 
 export async function updatePlayerPermission(playerId: string, level: PermissionLevel) {
@@ -78,10 +78,36 @@ export async function removeAvatarAction(playerId: string) {
   revalidatePath(`/players/${playerId}`);
 }
 
-export async function deleteGameAdminAction(gameId: string) {
-  const { supabase } = await requireProfile("admin");
-  await deleteGame(supabase, gameId);
+function revalidateGameHistory(gameId?: string) {
   revalidatePath("/admin/games");
   revalidatePath("/play");
   revalidatePath("/play/test-games");
+  revalidatePath("/games");
+  revalidatePath("/leaderboard");
+  revalidatePath("/players");
+  if (gameId) revalidatePath(`/games/${gameId}`);
+}
+
+export async function deleteGameAdminAction(gameId: string) {
+  const { supabase } = await requireProfile("admin");
+  await deleteGame(supabase, gameId);
+  revalidateGameHistory(gameId);
+}
+
+/** Admin-only reset: renumbers every official game sequentially from #1 and
+ * guarantees every test game's league_number is NULL. See lib/services/games.ts. */
+export async function repairOfficialGameNumbersAction(): Promise<number> {
+  const { supabase } = await requireProfile("admin");
+  const count = await repairOfficialGameNumbers(supabase);
+  revalidateGameHistory();
+  return count;
+}
+
+/** Admin-only repair of an already-played game's game-level fields (status,
+ * official/test, winner, duration, league number) — never fabricates
+ * participants or actions. */
+export async function repairGameAction(gameId: string, patch: GameRepairPatch) {
+  const { supabase } = await requireProfile("admin");
+  await repairGame(supabase, gameId, patch);
+  revalidateGameHistory(gameId);
 }

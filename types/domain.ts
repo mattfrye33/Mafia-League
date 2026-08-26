@@ -202,6 +202,14 @@ export interface PlayerCareerStats {
   timesSilenced: number;
   totalMafiaHoursSeconds: number;
   avgGameDurationSeconds: number;
+  /** Games played AS this base role (regardless of later recruitment) — distinct
+   * from mafiaGames/civilianGames above, which track final alignment outcome. */
+  copGames: number;
+  medicGames: number;
+  priestGames: number;
+  kamikazeGames: number;
+  silencerGames: number;
+  civilianRoleGames: number;
 }
 
 export const EMPTY_CAREER_STATS: PlayerCareerStats = {
@@ -224,4 +232,10 @@ export const EMPTY_CAREER_STATS: PlayerCareerStats = {
   timesSilenced: 0,
   totalMafiaHoursSeconds: 0,
   avgGameDurationSeconds: 0,
+  copGames: 0,
+  medicGames: 0,
+  priestGames: 0,
+  kamikazeGames: 0,
+  silencerGames: 0,
+  civilianRoleGames: 0,
 };

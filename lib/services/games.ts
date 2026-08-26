@@ -1,11 +1,26 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database.types";
-import type { Game, GamePlayerWithDetails, RoleCounts } from "@/types/domain";
+import type { Alignment, Game, GamePlayerWithDetails, GameStatus, RoleCounts } from "@/types/domain";
 import { throwIfError } from "@/lib/supabase/errors";
 import { buildRoleSlugList, shuffle, totalAssigned } from "@/lib/gameSetup";
 import { listRoles, getCurrentRules } from "@/lib/services/rules";
 
 type Client = SupabaseClient<Database>;
+
+/**
+ * The ONE definition of "counts as league history" — Games Archive,
+ * Leaderboard, career stats, and badges must all filter through this (or the
+ * equivalent DB-side check in the RPCs) rather than each inventing its own
+ * status/is_test check.
+ */
+export function isOfficialCompletedGame(game: { status: string; is_test: boolean }): boolean {
+  return game.status === "completed" && game.is_test === false;
+}
+
+export interface GameListItem extends Game {
+  narratorName: string;
+  participantCount: number;
+}
 
 export async function listOpenGames(supabase: Client): Promise<Game[]> {
   // RLS already scopes this correctly per caller: narrators/admins see every
@@ -185,11 +200,30 @@ export async function listTestGames(supabase: Client): Promise<Game[]> {
   return (data ?? []) as Game[];
 }
 
+function mapGameListRow(g: Record<string, unknown>): GameListItem {
+  const narrator = g.narrator as { full_name: string; nickname: string } | null;
+  const countRow = (g.game_players as { count: number }[] | null)?.[0];
+  const { narrator: _n, game_players: _gp, ...gameFields } = g as unknown as Game & {
+    narrator: unknown;
+    game_players: unknown;
+  };
+  void _n;
+  void _gp;
+  return {
+    ...gameFields,
+    narratorName: narrator ? narrator.nickname || narrator.full_name : "Unknown",
+    participantCount: countRow?.count ?? 0,
+  };
+}
+
 /** Every game, any status — Admin game-management view only. */
-export async function listAllGames(supabase: Client): Promise<Game[]> {
-  const { data, error } = await supabase.from("games").select("*").order("created_at", { ascending: false });
+export async function listAllGames(supabase: Client): Promise<GameListItem[]> {
+  const { data, error } = await supabase
+    .from("games")
+    .select("*, narrator:profiles!narrator_id(full_name, nickname), game_players(count)")
+    .order("created_at", { ascending: false });
   throwIfError(error);
-  return (data ?? []) as Game[];
+  return (data ?? []).map(mapGameListRow);
 }
 
 /** RLS decides who's actually allowed to delete which game (see
@@ -212,4 +246,121 @@ export async function deleteTestGame(supabase: Client, gameId: string): Promise<
   if (!game) throw new Error("Game not found.");
   if (!game.is_test) throw new Error("Only test games can be deleted this way.");
   await deleteGame(supabase, gameId);
+}
+
+/** Completed, official (non-test) games only — the Games Archive list. */
+export async function listOfficialGames(supabase: Client): Promise<GameListItem[]> {
+  const { data, error } = await supabase
+    .from("games")
+    .select("*, narrator:profiles!narrator_id(full_name, nickname), game_players(count)")
+    .eq("status", "completed")
+    .eq("is_test", false)
+    .order("league_number", { ascending: false });
+  throwIfError(error);
+  return (data ?? []).map(mapGameListRow);
+}
+
+export interface GameHighlight {
+  gamePlayerId: string;
+  recruited: boolean;
+  recruitedByGamePlayerId: string | null;
+  successfulSnipe: boolean;
+  medicSave: boolean;
+  priestUsed: boolean;
+  kamikazeKill: boolean;
+  silenced: boolean;
+}
+
+/**
+ * Per-player highlights for a completed official game's summary page —
+ * derived from game_players' own recorded fields plus the narrow
+ * get_official_game_actions() RPC. Deliberately NOT a raw event feed: only
+ * the specific highlight flags the summary page needs to show.
+ */
+export async function getGameHighlights(supabase: Client, gameId: string): Promise<Map<string, GameHighlight>> {
+  const players = await getGamePlayers(supabase, gameId);
+  const { data: actions, error } = await supabase.rpc("get_official_game_actions", { target_game_id: gameId });
+  throwIfError(error);
+  const actionList = actions ?? [];
+
+  const byId = new Map<string, GameHighlight>();
+  for (const p of players) {
+    byId.set(p.id, {
+      gamePlayerId: p.id,
+      recruited: p.recruited,
+      recruitedByGamePlayerId: p.recruited_by_game_player_id,
+      successfulSnipe: false,
+      medicSave: false,
+      priestUsed: false,
+      kamikazeKill: false,
+      silenced: false,
+    });
+  }
+
+  for (const a of actionList) {
+    if (a.action_type === "snipe_confirmed" && a.actor_game_player_id) {
+      const h = byId.get(a.actor_game_player_id);
+      if (h) h.successfulSnipe = true;
+    }
+    if (a.action_type === "priest_use" && a.actor_game_player_id) {
+      const h = byId.get(a.actor_game_player_id);
+      if (h) h.priestUsed = true;
+    }
+    if (a.action_type === "kamikaze_kill" && a.actor_game_player_id) {
+      const h = byId.get(a.actor_game_player_id);
+      if (h) h.kamikazeKill = true;
+    }
+    if (a.action_type === "silence" && a.target_game_player_id) {
+      const h = byId.get(a.target_game_player_id);
+      if (h) h.silenced = true;
+    }
+  }
+
+  const medicProtects = actionList.filter((a) => a.action_type === "medic_protect");
+  for (const mp of medicProtects) {
+    const resolve = actionList.find((a) => a.action_type === "resolve_night" && a.round === mp.round);
+    const meta = (resolve?.payload as { meta?: Record<string, unknown> } | null)?.meta;
+    if (mp.actor_game_player_id && meta?.savedGamePlayerId === mp.target_game_player_id) {
+      const h = byId.get(mp.actor_game_player_id);
+      if (h) h.medicSave = true;
+    }
+  }
+
+  return byId;
+}
+
+/**
+ * Admin-only reset: renumbers every official (non-test) game sequentially
+ * from #1 by created_at, and guarantees every test game's league_number is
+ * NULL. Safe to run repeatedly while the league is still young — see the
+ * function body (migration 0010) for why this shouldn't become a habit once
+ * official history is established.
+ */
+export async function repairOfficialGameNumbers(supabase: Client): Promise<number> {
+  const { data, error } = await supabase.rpc("repair_official_game_numbers");
+  throwIfError(error);
+  return data ?? 0;
+}
+
+export interface GameRepairPatch {
+  status?: GameStatus;
+  is_test?: boolean;
+  winner_alignment?: Alignment | null;
+  official_duration_seconds?: number | null;
+  league_number?: number | null;
+  ended_at?: string | null;
+}
+
+/**
+ * Admin-only repair of an already-played game's game-LEVEL fields only —
+ * never participants or actions, so it can never fabricate detailed stats
+ * (Medic saves, snipes, etc.) that weren't actually recorded. Marking a game
+ * as a test game always clears its league_number, since is_test=true must
+ * imply league_number=NULL everywhere in the app.
+ */
+export async function repairGame(supabase: Client, gameId: string, patch: GameRepairPatch): Promise<void> {
+  const finalPatch = { ...patch };
+  if (finalPatch.is_test === true) finalPatch.league_number = null;
+  const { error } = await supabase.from("games").update(finalPatch).eq("id", gameId);
+  throwIfError(error);
 }

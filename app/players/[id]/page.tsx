@@ -12,7 +12,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { FeaturedBadges } from "@/components/players/FeaturedBadges";
 import { AchievementsGrid } from "@/components/players/AchievementsGrid";
 import { YEAR_LABELS } from "@/types/domain";
-import { formatDuration, formatPct } from "@/lib/utils";
+import { formatDuration, formatPct, roleDisplayLabel } from "@/lib/utils";
 
 export default async function PlayerProfilePage({ params }: PageProps<"/players/[id]">) {
   const { id } = await params;
@@ -86,6 +86,19 @@ export default async function PlayerProfilePage({ params }: PageProps<"/players/
         <Card>
           <CardTitle>Role Stats</CardTitle>
           <div className="mt-4 grid grid-cols-2 gap-3">
+            <StatTile label="Cop Games" value={stats.copGames} />
+            <StatTile label="Medic Games" value={stats.medicGames} />
+            <StatTile label="Priest Games" value={stats.priestGames} />
+            <StatTile label="Kamikaze Games" value={stats.kamikazeGames} />
+            <StatTile label="Silencer Games" value={stats.silencerGames} />
+            <StatTile label="Civilian Games" value={stats.civilianRoleGames} />
+          </div>
+        </Card>
+
+        <Card>
+          <CardTitle>Other</CardTitle>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <StatTile label="Times Recruited" value={stats.timesRecruited} />
             <StatTile label="Medic Saves" value={stats.medicSaves} />
             <StatTile label="Priest Uses" value={stats.priestUses} />
             <StatTile label="Kamikaze Kills" value={stats.kamikazeKills} />
@@ -103,14 +116,53 @@ export default async function PlayerProfilePage({ params }: PageProps<"/players/
                 {recentGames.map((g) => (
                   <Link
                     key={g.gameId}
-                    href={`/play/games/${g.gameId}`}
+                    href={`/games/${g.gameId}`}
                     className="flex items-center justify-between rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm hover:border-gold/40"
                   >
                     <span className="text-foreground">
-                      Game #{g.leagueNumber ?? "—"} &middot; {g.roleName}
+                      Game #{g.leagueNumber ?? "—"} &middot;{" "}
+                      {roleDisplayLabel({
+                        role: { name: g.roleName, slug: g.roleSlug },
+                        original_alignment: g.originalAlignment,
+                        current_alignment: g.currentAlignment,
+                      })}
                     </span>
                     <span className={g.won ? "text-civilian" : "text-red-soft"}>{g.won ? "Won" : "Lost"}</span>
                   </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
+
+        <Card>
+          <CardTitle>Role History</CardTitle>
+          <div className="mt-4">
+            {recentGames.length === 0 ? (
+              <EmptyState title="No games played yet" />
+            ) : (
+              <div className="space-y-2">
+                {recentGames.map((g) => (
+                  <div
+                    key={g.gameId}
+                    className="flex items-center justify-between rounded-lg border border-border bg-surface-raised px-3 py-2 text-sm"
+                  >
+                    <span className="text-muted">Game #{g.leagueNumber ?? "—"}</span>
+                    <span className="text-foreground">
+                      Base: {g.roleName}
+                      {g.originalAlignment !== g.currentAlignment && (
+                        <>
+                          {" "}
+                          &rarr;{" "}
+                          {roleDisplayLabel({
+                            role: { name: g.roleName, slug: g.roleSlug },
+                            original_alignment: g.originalAlignment,
+                            current_alignment: g.currentAlignment,
+                          })}
+                        </>
+                      )}
+                    </span>
+                  </div>
                 ))}
               </div>
             )}

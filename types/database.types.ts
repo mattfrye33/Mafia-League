@@ -174,6 +174,7 @@ export type Database = {
         Update: {
           league_number?: number | null;
           status?: string;
+          is_test?: boolean;
           rules_version_id?: string | null;
           current_round?: number;
           winner_alignment?: string | null;
@@ -187,7 +188,36 @@ export type Database = {
           pending_mafia_kill_game_player_id?: string | null;
           pending_medic_protect_game_player_id?: string | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "games_narrator_id_fkey";
+            columns: ["narrator_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "games_rules_version_id_fkey";
+            columns: ["rules_version_id"];
+            isOneToOne: false;
+            referencedRelation: "rules_versions";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "games_pending_mafia_kill_game_player_id_fkey";
+            columns: ["pending_mafia_kill_game_player_id"];
+            isOneToOne: false;
+            referencedRelation: "game_players";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "games_pending_medic_protect_game_player_id_fkey";
+            columns: ["pending_medic_protect_game_player_id"];
+            isOneToOne: false;
+            referencedRelation: "game_players";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       game_players: {
         Row: {
@@ -430,6 +460,31 @@ export type Database = {
           target_game_player_id: string | null;
           payload: Json;
         }[];
+      };
+      get_official_game_actions: {
+        Args: { target_game_id: string };
+        Returns: {
+          round: number;
+          action_type: string;
+          actor_game_player_id: string | null;
+          target_game_player_id: string | null;
+          payload: Json;
+        }[];
+      };
+      get_official_actions_for_stats: {
+        Args: Record<string, never>;
+        Returns: {
+          game_id: string;
+          round: number;
+          action_type: string;
+          actor_game_player_id: string | null;
+          target_game_player_id: string | null;
+          payload: Json;
+        }[];
+      };
+      repair_official_game_numbers: {
+        Args: Record<string, never>;
+        Returns: number;
       };
     };
     Enums: Record<string, never>;
