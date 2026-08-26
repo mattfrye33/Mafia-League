@@ -11,24 +11,35 @@ export function NightRecapCards({ recap }: { recap: NightRecap }) {
       <MafiaCard recap={recap} />
       <Card>
         <CardTitle>COPS</CardTitle>
-        {recap.cops.length > 0 ? (
-          <div className="mt-2 space-y-3">
-            {recap.cops.map((c, i) => (
-              <div key={i}>
-                <p className="text-sm text-muted">
-                  Checked: <span className="text-foreground">{c.targetName}</span>
-                </p>
-                <p className={cn(RESULT_CLASS, c.result === "MAFIA" ? "text-red-soft" : "text-civilian")}>
-                  RESULT: {c.result}
-                </p>
-                {c.isGodfather && <Badge tone="gold" className="mt-1">GODFATHER CHECK: {c.checkCount} / 2</Badge>}
-                {c.causedRecruitCatch && <p className="mt-1 text-xs text-gold">Recruitment caught</p>}
-              </div>
-            ))}
+        {recap.copAction?.kind === "investigate" && (
+          <div className="mt-2">
+            <p className="text-sm text-muted">
+              Checked: <span className="text-foreground">{recap.copAction.targetName}</span>
+            </p>
+            <p className={cn(RESULT_CLASS, recap.copAction.result === "MAFIA" ? "text-red-soft" : "text-civilian")}>
+              RESULT: {recap.copAction.result}
+            </p>
+            {recap.copAction.isGodfather && (
+              <Badge tone="gold" className="mt-1">
+                GODFATHER CHECK: {recap.copAction.checkCount} / 2
+              </Badge>
+            )}
+            {recap.copAction.causedRecruitCatch && <p className="mt-1 text-xs text-gold">Recruitment caught</p>}
           </div>
-        ) : (
-          <p className="mt-2 text-sm text-muted">{recap.copsReason}</p>
         )}
+        {recap.copAction?.kind === "cross_check" && (
+          <div className="mt-2">
+            <p className="text-sm text-muted">Action: Cross Check</p>
+            <p className={cn(RESULT_CLASS, recap.copAction.result === "MAFIA_FOUND" ? "text-red-soft" : "text-civilian")}>
+              Result: {recap.copAction.result === "MAFIA_FOUND" ? "MAFIA FOUND" : "NO MAFIA FOUND"}
+            </p>
+            <p className="mt-1 text-sm text-foreground">
+              {recap.copAction.result === "MAFIA_FOUND" ? "At least one Cop was dirty." : "The Cops were clean."}
+            </p>
+            {recap.copAction.causedRecruitCatch && <p className="mt-1 text-xs text-gold">Recruitment caught</p>}
+          </div>
+        )}
+        {!recap.copAction && <p className="mt-2 text-sm text-muted">{recap.copActionReason}</p>}
       </Card>
 
       <Card>

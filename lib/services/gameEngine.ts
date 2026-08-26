@@ -87,6 +87,7 @@ const ACTION_LABELS: Record<string, string> = {
   recruit: "recruit",
   mafia_kill_target_set: "Godfather's kill target",
   cop_investigate: "Cop investigation",
+  cop_cross_check: "Cop Cross Check",
   medic_protect: "Medic protection",
   silence: "Silencer action",
   skip_action: "skipped action",
@@ -327,6 +328,40 @@ export async function copInvestigate(
   return { result, isGodfather, checkCount };
 }
 
+export interface CrossCheckCopsResult {
+  result: "MAFIA_FOUND" | "NO_MAFIA_FOUND";
+}
+
+/** The Cops' whole-group option instead of a single Investigate: checks
+ * every living Cop's current alignment and reports only whether the group
+ * is clean or contains at least one Dirty Cop — never which one. Uses the
+ * Cops' one action for the night, same as Investigate. */
+export async function crossCheckCops(supabase: Client, gameId: string, narratorId: string): Promise<CrossCheckCopsResult> {
+  const game = await getGame(supabase, gameId);
+  if (!game) throw new Error("Game not found.");
+
+  const players = await getGamePlayers(supabase, gameId);
+  const livingCops = players.filter((p) => p.alive && p.role.slug === "cop");
+  const mafiaFound = livingCops.some((p) => p.current_alignment === "mafia");
+  const result: "MAFIA_FOUND" | "NO_MAFIA_FOUND" = mafiaFound ? "MAFIA_FOUND" : "NO_MAFIA_FOUND";
+
+  const patches: ActionPatch[] = [];
+  const beforeGame = await patchGame(supabase, gameId, { phase: "night_medic" });
+  patches.push({ table: "games", id: gameId, before: beforeGame });
+
+  await recordAction(supabase, {
+    gameId,
+    round: game.current_round,
+    phase: "night_cop",
+    actionType: "cop_cross_check",
+    patches,
+    meta: { result, checkedGamePlayerIds: livingCops.map((c) => c.id) },
+    createdBy: narratorId,
+  });
+
+  return { result };
+}
+
 // ----------------------------------------------------------------------------
 // Night phase: Medic
 // ----------------------------------------------------------------------------
@@ -432,27 +467,40 @@ export async function resolveNight(supabase: Client, gameId: string, narratorId:
   // Resolve this round's recruit attempt, if any. The target's alignment
   // was already flipped to Mafia the moment the Godfather recruited them
   // (so a same-night Cop check can correctly see them as Mafia) — but that
-  // flip was only ever provisional. If a Cop investigated this exact target
-  // THIS round and the result was MAFIA, the Cops caught it: the
-  // recruitment never actually happened. The recruit is still consumed
-  // either way (checked separately, in recruitPlayer()'s own patch).
+  // flip was only ever provisional. It's caught, and reverted, if either:
+  //   - a Cop directly investigated this exact target this round and got
+  //     MAFIA, or
+  //   - the recruit target is a Cop and the Cops chose Cross Check this
+  //     round with a MAFIA_FOUND result (a cross-check can never catch a
+  //     recruited non-Cop — it only ever looks at the Cop group).
+  // The recruit is still consumed either way (recruitPlayer()'s own patch).
   const { data: roundActions, error: roundActionsError } = await supabase
     .from("game_actions")
     .select("*")
     .eq("game_id", gameId)
     .eq("round", game.current_round)
     .eq("undone", false)
-    .in("action_type", ["recruit", "cop_investigate"]);
+    .in("action_type", ["recruit", "cop_investigate", "cop_cross_check"]);
   throwIfError(roundActionsError);
 
   const recruitAction = (roundActions ?? []).find((a) => a.action_type === "recruit");
   if (recruitAction?.target_game_player_id) {
     const recruitTargetId = recruitAction.target_game_player_id;
-    const wasCaught = (roundActions ?? []).some(
-      (a) => a.action_type === "cop_investigate" && a.target_game_player_id === recruitTargetId && actionMeta(a).result === "MAFIA",
+
+    const caughtByInvestigate = (roundActions ?? []).some(
+      (a) =>
+        a.action_type === "cop_investigate" &&
+        a.target_game_player_id === recruitTargetId &&
+        actionMeta(a).result === "MAFIA",
     );
 
-    if (wasCaught) {
+    const recruitTargetPlayers = await getGamePlayers(supabase, gameId);
+    const recruitTarget = recruitTargetPlayers.find((p) => p.id === recruitTargetId);
+    const caughtByCrossCheck =
+      recruitTarget?.role.slug === "cop" &&
+      (roundActions ?? []).some((a) => a.action_type === "cop_cross_check" && actionMeta(a).result === "MAFIA_FOUND");
+
+    if (caughtByInvestigate || caughtByCrossCheck) {
       const before = await patchGamePlayer(supabase, recruitTargetId, {
         current_alignment: "civilian",
         recruited: false,
@@ -461,6 +509,7 @@ export async function resolveNight(supabase: Client, gameId: string, narratorId:
       patches.push({ table: "game_players", id: recruitTargetId, before });
       result.recruitCaught = { gamePlayerId: recruitTargetId };
       meta.recruitCaughtGamePlayerId = recruitTargetId;
+      meta.recruitCaughtBy = caughtByInvestigate ? "cop_investigate" : "cop_cross_check";
     }
   }
 
@@ -763,13 +812,20 @@ export interface NightRecapMafia {
   newStatusLabel?: string;
 }
 
-export interface NightRecapCopCheck {
-  targetName: string;
-  result: "MAFIA" | "NOT MAFIA";
-  isGodfather: boolean;
-  checkCount?: number;
-  causedRecruitCatch?: boolean;
-}
+export type NightRecapCopAction =
+  | {
+      kind: "investigate";
+      targetName: string;
+      result: "MAFIA" | "NOT MAFIA";
+      isGodfather: boolean;
+      checkCount?: number;
+      causedRecruitCatch: boolean;
+    }
+  | {
+      kind: "cross_check";
+      result: "MAFIA_FOUND" | "NO_MAFIA_FOUND";
+      causedRecruitCatch: boolean;
+    };
 
 export interface NightRecapMedic {
   acted: boolean;
@@ -790,8 +846,8 @@ export interface NightRecap {
   round: number;
   recruitsLeft: number;
   mafia: NightRecapMafia;
-  cops: NightRecapCopCheck[];
-  copsReason?: string;
+  copAction: NightRecapCopAction | null;
+  copActionReason?: string;
   medic: NightRecapMedic;
   silencer: NightRecapSilencer;
   kamikaze: { targetName: string }[];
@@ -822,6 +878,7 @@ const NIGHT_RECAP_ACTION_TYPES = [
   "recruit",
   "mafia_kill_target_set",
   "cop_investigate",
+  "cop_cross_check",
   "medic_protect",
   "silence",
   "resolve_night",
@@ -848,7 +905,8 @@ export async function getNightRecap(supabase: Client, gameId: string, round: num
   const recruit = actions.find((a) => a.action_type === "recruit");
   const killSet = actions.find((a) => a.action_type === "mafia_kill_target_set");
   const resolve = actions.find((a) => a.action_type === "resolve_night");
-  const copChecks = actions.filter((a) => a.action_type === "cop_investigate");
+  const copInvestigateAction = actions.find((a) => a.action_type === "cop_investigate");
+  const copCrossCheckAction = actions.find((a) => a.action_type === "cop_cross_check");
   const medicProtect = actions.find((a) => a.action_type === "medic_protect");
   const silence = actions.find((a) => a.action_type === "silence");
   const kamikazeKills = actions.filter((a) => a.action_type === "kamikaze_kill");
@@ -858,6 +916,7 @@ export async function getNightRecap(supabase: Client, gameId: string, round: num
 
   const resolveMetaForRound = resolve ? actionMeta(resolve) : {};
   const recruitCaughtGamePlayerId = resolveMetaForRound.recruitCaughtGamePlayerId as string | undefined;
+  const recruitCaughtBy = resolveMetaForRound.recruitCaughtBy as string | undefined;
 
   let mafia: NightRecapMafia;
   if (recruit) {
@@ -884,17 +943,29 @@ export async function getNightRecap(supabase: Client, gameId: string, round: num
     mafia = { action: "skip" };
   }
 
-  const cops: NightRecapCopCheck[] = copChecks.map((check) => {
-    const meta = actionMeta(check);
-    return {
-      targetName: name(check.target_game_player_id),
+  let copAction: NightRecapCopAction | null = null;
+  let copActionReason: string | undefined;
+
+  if (copCrossCheckAction) {
+    const meta = actionMeta(copCrossCheckAction);
+    copAction = {
+      kind: "cross_check",
+      result: meta.result === "MAFIA_FOUND" ? "MAFIA_FOUND" : "NO_MAFIA_FOUND",
+      causedRecruitCatch: recruitCaughtBy === "cop_cross_check",
+    };
+  } else if (copInvestigateAction) {
+    const meta = actionMeta(copInvestigateAction);
+    copAction = {
+      kind: "investigate",
+      targetName: name(copInvestigateAction.target_game_player_id),
       result: meta.result === "MAFIA" ? "MAFIA" : "NOT MAFIA",
       isGodfather: Boolean(meta.isGodfather),
       checkCount: typeof meta.checkCount === "number" ? meta.checkCount : undefined,
-      causedRecruitCatch: Boolean(recruitCaughtGamePlayerId) && check.target_game_player_id === recruitCaughtGamePlayerId,
+      causedRecruitCatch: recruitCaughtBy === "cop_investigate",
     };
-  });
-  const copsReason = cops.length === 0 ? describeRoleAbsence(players, "cop") : undefined;
+  } else {
+    copActionReason = describeRoleAbsence(players, "cop");
+  }
 
   let medic: NightRecapMedic;
   if (medicProtect) {
@@ -923,5 +994,5 @@ export async function getNightRecap(supabase: Client, gameId: string, round: num
 
   const kamikaze = kamikazeKills.map((k) => ({ targetName: name(k.target_game_player_id) }));
 
-  return { round, recruitsLeft, mafia, cops, copsReason, medic, silencer, kamikaze };
+  return { round, recruitsLeft, mafia, copAction, copActionReason, medic, silencer, kamikaze };
 }

@@ -39,6 +39,13 @@ export async function copInvestigateAction(gameId: string, targetGamePlayerId: s
   return result;
 }
 
+export async function crossCheckCopsAction(gameId: string) {
+  const { supabase, narratorId } = await withNarrator();
+  const result = await engine.crossCheckCops(supabase, gameId, narratorId);
+  revalidateGame(gameId);
+  return result;
+}
+
 export async function medicProtectAction(gameId: string, medicGamePlayerId: string, targetGamePlayerId: string) {
   const { supabase, narratorId } = await withNarrator();
   await engine.medicProtect(supabase, gameId, medicGamePlayerId, targetGamePlayerId, narratorId);

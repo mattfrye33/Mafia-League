@@ -7,6 +7,7 @@ import {
   setMafiaKillTargetAction,
   skipNightStepAction,
   copInvestigateAction,
+  crossCheckCopsAction,
   medicProtectAction,
   silenceTargetAction,
   resolveNightAction,
@@ -387,8 +388,10 @@ interface CopConfirmation {
 }
 
 function CopStep({ game, players, onDone }: { game: Game; players: GamePlayerWithDetails[]; onDone: () => void }) {
+  const [mode, setMode] = useState<"menu" | "investigate">("menu");
   const [selected, setSelected] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<CopConfirmation | null>(null);
+  const [crossCheckResult, setCrossCheckResult] = useState<"MAFIA_FOUND" | "NO_MAFIA_FOUND" | null>(null);
   const [skipped, setSkipped] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -411,6 +414,21 @@ function CopStep({ game, players, onDone }: { game: Game; players: GamePlayerWit
   }
 
   if (skipped) return <ActionConfirmation message="Cop skipped their action." onContinue={onDone} />;
+
+  if (crossCheckResult) {
+    return (
+      <Card className="space-y-3 text-center">
+        <p className="text-xs uppercase tracking-wide text-muted">Cops Cross Check</p>
+        <p className={`font-heading text-2xl ${crossCheckResult === "MAFIA_FOUND" ? "text-red-soft" : "text-civilian"}`}>
+          {crossCheckResult === "MAFIA_FOUND" ? "MAFIA FOUND" : "NO MAFIA FOUND"}
+        </p>
+        <p className="text-sm text-foreground">
+          {crossCheckResult === "MAFIA_FOUND" ? "At least one Cop is Mafia-aligned." : "The Cops are clean."}
+        </p>
+        <Button onClick={onDone}>Continue</Button>
+      </Card>
+    );
+  }
 
   if (confirmation) {
     return (
@@ -453,6 +471,18 @@ function CopStep({ game, players, onDone }: { game: Game; players: GamePlayerWit
     });
   }
 
+  function doCrossCheck() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await crossCheckCopsAction(game.id);
+        setCrossCheckResult(result.result);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Something went wrong.");
+      }
+    });
+  }
+
   function doSkip() {
     setError(null);
     startTransition(async () => {
@@ -470,26 +500,47 @@ function CopStep({ game, players, onDone }: { game: Game; players: GamePlayerWit
       <div>
         <CardTitle>{livingCops.length > 1 ? "Cops" : "Cop"}</CardTitle>
         <p className="font-heading text-lg text-foreground">{livingCops.map((c) => participantDisplay(c).name).join(" + ")}</p>
-        <p className="mt-1 text-sm text-muted">Who are the Cops checking?</p>
+        <p className="mt-1 text-sm text-muted">What are the Cops doing?</p>
       </div>
-      <PlayerPicker
-        options={targets.map((p) => ({
-          id: p.id,
-          name: participantDisplay(p).name,
-          subtitle: p.role.slug === "cop" ? "Cop" : undefined,
-        }))}
-        selectedId={selected}
-        onSelect={setSelected}
-        disabled={pending}
-      />
-      <div className="flex gap-2">
-        <Button variant="ghost" disabled={pending} onClick={doSkip}>
-          Skip Action
-        </Button>
-        <Button disabled={!selected || pending} onClick={doInvestigate}>
-          Confirm Investigate
-        </Button>
-      </div>
+      {mode === "menu" && (
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setMode("investigate")}>Investigate Player</Button>
+          <Button variant="secondary" disabled={pending} onClick={doCrossCheck}>
+            {pending ? "Checking..." : "Cross Check Cops"}
+          </Button>
+          <Button variant="ghost" disabled={pending} onClick={doSkip}>
+            Skip Action
+          </Button>
+        </div>
+      )}
+      {mode === "investigate" && (
+        <div className="space-y-3">
+          <PlayerPicker
+            options={targets.map((p) => ({
+              id: p.id,
+              name: participantDisplay(p).name,
+              subtitle: p.role.slug === "cop" ? "Cop" : undefined,
+            }))}
+            selectedId={selected}
+            onSelect={setSelected}
+            disabled={pending}
+          />
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setMode("menu");
+                setSelected(null);
+              }}
+            >
+              Back
+            </Button>
+            <Button disabled={!selected || pending} onClick={doInvestigate}>
+              Confirm Investigate
+            </Button>
+          </div>
+        </div>
+      )}
       {error && <p className="text-sm text-red-soft">{error}</p>}
     </Card>
   );
