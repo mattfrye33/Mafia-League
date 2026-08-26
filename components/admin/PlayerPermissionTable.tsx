@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { updatePlayerPermission, updatePlayerActive, removeAvatarAction } from "@/app/admin/actions";
 import { PERMISSION_LEVELS, YEAR_LABELS, type PermissionLevel, type Profile } from "@/types/domain";
 import { PermissionBadge } from "@/components/ui/PermissionBadge";
@@ -122,11 +123,16 @@ function PlayerRow({ player, isSelf }: { player: Profile; isSelf: boolean }) {
       </td>
       <td className="px-4 py-3 text-muted">{active ? "Active" : "Deactivated"}</td>
       <td className="px-4 py-3 text-right">
-        {!isSelf && (
-          <Button variant={active ? "danger" : "secondary"} disabled={pending} onClick={handleActiveToggle}>
-            {active ? "Deactivate" : "Reactivate"}
-          </Button>
-        )}
+        <div className="flex justify-end gap-2">
+          <Link href={`/admin/players/${player.id}`}>
+            <Button variant="secondary">Edit Profile</Button>
+          </Link>
+          {!isSelf && (
+            <Button variant={active ? "danger" : "secondary"} disabled={pending} onClick={handleActiveToggle}>
+              {active ? "Deactivate" : "Reactivate"}
+            </Button>
+          )}
+        </div>
       </td>
     </tr>
   );

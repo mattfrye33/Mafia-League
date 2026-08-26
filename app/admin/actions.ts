@@ -2,7 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { requireProfile } from "@/lib/auth";
-import { setPermissionLevel, setActive, removeAvatar } from "@/lib/services/profiles";
+import {
+  setPermissionLevel,
+  setActive,
+  removeAvatar,
+  updateProfileAsAdmin,
+  type AdminProfileEditInput,
+} from "@/lib/services/profiles";
 import { updateLeagueSettingsAdmin } from "@/lib/services/league";
 import {
   createTestPlayer,
@@ -76,6 +82,22 @@ export async function removeAvatarAction(playerId: string) {
   revalidatePath("/admin");
   revalidatePath("/players");
   revalidatePath(`/players/${playerId}`);
+}
+
+/** Admin-only edit of another player's basic profile fields (name, nickname,
+ * year, bio) — never email/password/auth identity/permission/active. This
+ * action's own admin check IS the enforcement point: updateProfileAsAdmin()
+ * refuses to run without proof the caller is an admin, and requireProfile
+ * here is exactly that proof, so a non-admin can never reach the update even
+ * if RLS alone would technically allow it for a real admin session. */
+export async function updatePlayerProfileAction(playerId: string, input: AdminProfileEditInput) {
+  const { supabase, profile } = await requireProfile("admin");
+  await updateProfileAsAdmin(supabase, profile.permission_level === "admin", playerId, input);
+  revalidatePath("/admin");
+  revalidatePath(`/admin/players/${playerId}`);
+  revalidatePath("/players");
+  revalidatePath(`/players/${playerId}`);
+  revalidatePath("/leaderboard");
 }
 
 function revalidateGameHistory(gameId?: string) {
