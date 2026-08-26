@@ -496,8 +496,18 @@ export async function resolveNight(supabase: Client, gameId: string, narratorId:
 
     const recruitTargetPlayers = await getGamePlayers(supabase, gameId);
     const recruitTarget = recruitTargetPlayers.find((p) => p.id === recruitTargetId);
+    // Cross Check only ever reports "at least one Dirty Cop exists" for the
+    // whole group, never which one — so it can only be blamed on THIS
+    // round's fresh recruit if they're the ONLY dirty Cop it could be
+    // detecting. If another living Cop is already Mafia-aligned (recruited
+    // in an earlier round), a MAFIA_FOUND result is already fully explained
+    // by them and must not falsely revert an unrelated, successful recruit.
+    const otherLivingDirtyCop = recruitTargetPlayers.some(
+      (p) => p.alive && p.role.slug === "cop" && p.id !== recruitTargetId && p.current_alignment === "mafia",
+    );
     const caughtByCrossCheck =
       recruitTarget?.role.slug === "cop" &&
+      !otherLivingDirtyCop &&
       (roundActions ?? []).some((a) => a.action_type === "cop_cross_check" && actionMeta(a).result === "MAFIA_FOUND");
 
     if (caughtByInvestigate || caughtByCrossCheck) {
