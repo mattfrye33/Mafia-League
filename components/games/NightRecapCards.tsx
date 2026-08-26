@@ -22,6 +22,7 @@ export function NightRecapCards({ recap }: { recap: NightRecap }) {
                   RESULT: {c.result}
                 </p>
                 {c.isGodfather && <Badge tone="gold" className="mt-1">GODFATHER CHECK: {c.checkCount} / 2</Badge>}
+                {c.causedRecruitCatch && <p className="mt-1 text-xs text-gold">Recruitment caught</p>}
               </div>
             ))}
           </div>
@@ -89,10 +90,12 @@ export function NightRecapCards({ recap }: { recap: NightRecap }) {
         </Card>
       )}
 
-      {recap.mafia.action !== "recruit" && (
+      {!(recap.mafia.action === "recruit" && recap.mafia.recruitOutcome === "successful") && (
         <Card>
           <CardTitle>RECRUITMENT</CardTitle>
-          <p className="mt-2 text-sm text-muted">No recruit attempted</p>
+          <p className="mt-2 text-sm text-muted">
+            {recap.mafia.action === "recruit" ? "Recruit attempted — see MAFIA above" : "No recruit attempted"}
+          </p>
           <p className="mt-1 text-xs text-muted">Recruits Left: {recap.recruitsLeft}</p>
         </Card>
       )}
@@ -118,15 +121,28 @@ function MafiaCard({ recap }: { recap: NightRecap }) {
           </p>
         </div>
       )}
-      {mafia.action === "recruit" && (
+      {mafia.action === "recruit" && mafia.recruitOutcome === "successful" && (
         <div className="mt-2">
           <p className="text-sm text-muted">Action: Recruit</p>
           <p className="text-sm text-muted">
             Target: <span className="text-foreground">{mafia.targetName}</span>
           </p>
           <p className={cn(RESULT_CLASS, "text-gold")}>RECRUIT SUCCESSFUL</p>
-          <p className="mt-1 text-sm text-foreground">New Status: {mafia.newStatusLabel}</p>
+          <p className="mt-1 text-sm text-foreground">
+            {mafia.newStatusLabel === "Mafia" ? `${mafia.targetName} joined the Mafia.` : `${mafia.targetName} was recruited.`}
+          </p>
+          <p className="mt-1 text-sm text-foreground">New Role: {mafia.newStatusLabel}</p>
           <p className="mt-1 text-xs text-muted">Recruits Left: {recap.recruitsLeft}</p>
+        </div>
+      )}
+      {mafia.action === "recruit" && mafia.recruitOutcome === "caught" && (
+        <div className="mt-2">
+          <p className="text-sm text-muted">Action: Recruit</p>
+          <p className="text-sm text-muted">
+            Target: <span className="text-foreground">{mafia.targetName}</span>
+          </p>
+          <p className={cn(RESULT_CLASS, "text-red-soft")}>RECRUIT UNSUCCESSFUL</p>
+          <p className="mt-1 text-sm text-foreground">Caught by the Cops.</p>
         </div>
       )}
       {mafia.action === "skip" && <p className="mt-2 text-sm text-muted">The Mafia stayed quiet last night.</p>}

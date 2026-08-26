@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { gameTitle, initials, participantDisplay } from "@/lib/utils";
+import { gameTitle, initials, participantDisplay, roleDisplayLabel } from "@/lib/utils";
 import { roleReviewRank } from "@/lib/gameSetup";
 import type { Game, GamePlayerWithDetails } from "@/types/domain";
 
@@ -103,8 +103,8 @@ export function GameSetupReview({
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-semibold text-foreground">{name}</p>
                       <div className="mt-1 flex items-center gap-2">
-                        <Badge tone={gp.role.default_alignment === "mafia" ? "mafia" : "civilian"}>
-                          {gp.role.name}
+                        <Badge tone={gp.current_alignment === "mafia" ? "mafia" : "civilian"}>
+                          {roleDisplayLabel(gp)}
                         </Badge>
                         {isTest && <Badge tone="muted">TEST</Badge>}
                       </div>

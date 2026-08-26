@@ -1,7 +1,7 @@
 import { GameTimer } from "@/components/games/GameTimer";
 import { Card, CardTitle } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
-import { gameTitle, initials, participantDisplay } from "@/lib/utils";
+import { gameTitle, initials, participantDisplay, roleDisplayLabel } from "@/lib/utils";
 import type { Game, GamePlayerWithDetails } from "@/types/domain";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -34,9 +34,7 @@ export function ActiveGameScreen({ game, players }: { game: Game; players: GameP
 
       <div>
         <CardTitle>Roster</CardTitle>
-        <p className="mb-3 mt-1 text-xs text-muted">
-          Narrator/Admin view only — full Night/Day game engine arrives in Phase 3.
-        </p>
+        <p className="mb-3 mt-1 text-xs text-muted">Narrator/Admin view only.</p>
         <div className="grid gap-2 sm:grid-cols-2">
           {sorted.map((gp) => {
             const { name, isTest } = participantDisplay(gp);
@@ -48,7 +46,7 @@ export function ActiveGameScreen({ game, players }: { game: Game; players: GameP
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold text-foreground">{name}</p>
                   <div className="mt-1 flex items-center gap-2">
-                    <Badge tone={gp.role.default_alignment === "mafia" ? "mafia" : "civilian"}>{gp.role.name}</Badge>
+                    <Badge tone={gp.current_alignment === "mafia" ? "mafia" : "civilian"}>{roleDisplayLabel(gp)}</Badge>
                     {isTest && <Badge tone="muted">TEST</Badge>}
                     {!gp.alive && <Badge tone="muted">Eliminated</Badge>}
                   </div>

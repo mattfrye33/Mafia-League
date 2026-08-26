@@ -31,15 +31,23 @@ export function participantDisplay(gp: Participant): { name: string; isTest: boo
 }
 
 interface RoleHolder {
-  role: { name: string };
+  role: { name: string; slug: string };
   original_alignment: string;
   current_alignment: string;
 }
 
-/** "Cop" normally, "Dirty Cop" once a Civilian-side role has been recruited to Mafia. */
+/**
+ * The single source of truth for how a base role + alignment should read
+ * anywhere in the app: "Cop" normally, "Dirty Cop" once a Civilian-side
+ * special role has been recruited to Mafia — except a recruited normal
+ * Civilian has no special role to preserve, so it's just "Mafia", never
+ * "Dirty Civilian".
+ */
 export function roleDisplayLabel(gp: RoleHolder): string {
   const isDirty = gp.current_alignment === "mafia" && gp.original_alignment === "civilian";
-  return isDirty ? `Dirty ${gp.role.name}` : gp.role.name;
+  if (!isDirty) return gp.role.name;
+  if (gp.role.slug === "civilian") return "Mafia";
+  return `Dirty ${gp.role.name}`;
 }
 
 export function initials(name: string): string {

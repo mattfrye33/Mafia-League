@@ -418,6 +418,7 @@ export interface DeathResult {
 
 export interface ResolveNightResult extends DeathResult {
   saved: boolean;
+  recruitCaught?: { gamePlayerId: string };
 }
 
 export async function resolveNight(supabase: Client, gameId: string, narratorId: string): Promise<ResolveNightResult> {
@@ -427,6 +428,41 @@ export async function resolveNight(supabase: Client, gameId: string, narratorId:
   const patches: ActionPatch[] = [];
   const meta: Record<string, unknown> = {};
   const result: ResolveNightResult = { saved: false };
+
+  // Resolve this round's recruit attempt, if any. The target's alignment
+  // was already flipped to Mafia the moment the Godfather recruited them
+  // (so a same-night Cop check can correctly see them as Mafia) — but that
+  // flip was only ever provisional. If a Cop investigated this exact target
+  // THIS round and the result was MAFIA, the Cops caught it: the
+  // recruitment never actually happened. The recruit is still consumed
+  // either way (checked separately, in recruitPlayer()'s own patch).
+  const { data: roundActions, error: roundActionsError } = await supabase
+    .from("game_actions")
+    .select("*")
+    .eq("game_id", gameId)
+    .eq("round", game.current_round)
+    .eq("undone", false)
+    .in("action_type", ["recruit", "cop_investigate"]);
+  throwIfError(roundActionsError);
+
+  const recruitAction = (roundActions ?? []).find((a) => a.action_type === "recruit");
+  if (recruitAction?.target_game_player_id) {
+    const recruitTargetId = recruitAction.target_game_player_id;
+    const wasCaught = (roundActions ?? []).some(
+      (a) => a.action_type === "cop_investigate" && a.target_game_player_id === recruitTargetId && actionMeta(a).result === "MAFIA",
+    );
+
+    if (wasCaught) {
+      const before = await patchGamePlayer(supabase, recruitTargetId, {
+        current_alignment: "civilian",
+        recruited: false,
+        recruited_by_game_player_id: null,
+      });
+      patches.push({ table: "game_players", id: recruitTargetId, before });
+      result.recruitCaught = { gamePlayerId: recruitTargetId };
+      meta.recruitCaughtGamePlayerId = recruitTargetId;
+    }
+  }
 
   const killTarget = game.pending_mafia_kill_game_player_id;
   const protectedId = game.pending_medic_protect_game_player_id;
@@ -723,6 +759,7 @@ export interface NightRecapMafia {
   action: "kill" | "recruit" | "skip";
   targetName?: string;
   killOutcome?: "killed" | "saved";
+  recruitOutcome?: "successful" | "caught";
   newStatusLabel?: string;
 }
 
@@ -731,6 +768,7 @@ export interface NightRecapCopCheck {
   result: "MAFIA" | "NOT MAFIA";
   isGodfather: boolean;
   checkCount?: number;
+  causedRecruitCatch?: boolean;
 }
 
 export interface NightRecapMedic {
@@ -775,7 +813,7 @@ function describeRoleAbsence(players: GamePlayerWithDetails[], slug: string): st
   if (!holder) return `No ${capitalizeRoleSlug(slug)} in this game.`;
   if (!holder.alive) return `No living ${capitalizeRoleSlug(slug)} remains.`;
   if (slug === "medic" && holder.current_alignment === "mafia") {
-    return `${participantDisplay(holder).name} has been recruited and is now Dirty Medic — no Civilian protection.`;
+    return `${participantDisplay(holder).name} has been recruited and is now ${roleDisplayLabel(holder)} — no Civilian protection.`;
   }
   return `${capitalizeRoleSlug(slug)} skipped their action.`;
 }
@@ -818,20 +856,29 @@ export async function getNightRecap(supabase: Client, gameId: string, round: num
   const game = await getGame(supabase, gameId);
   const recruitsLeft = game ? game.godfather_recruits_allowed - game.godfather_recruits_used : 0;
 
+  const resolveMetaForRound = resolve ? actionMeta(resolve) : {};
+  const recruitCaughtGamePlayerId = resolveMetaForRound.recruitCaughtGamePlayerId as string | undefined;
+
   let mafia: NightRecapMafia;
   if (recruit) {
-    const target = players.find((p) => p.id === recruit.target_game_player_id);
-    mafia = {
-      action: "recruit",
-      targetName: name(recruit.target_game_player_id),
-      newStatusLabel: target ? roleDisplayLabel(target) : undefined,
-    };
+    const targetId = recruit.target_game_player_id;
+    const wasCaught = recruitCaughtGamePlayerId === targetId;
+    if (wasCaught) {
+      mafia = { action: "recruit", targetName: name(targetId), recruitOutcome: "caught" };
+    } else {
+      const target = players.find((p) => p.id === targetId);
+      mafia = {
+        action: "recruit",
+        targetName: name(targetId),
+        recruitOutcome: "successful",
+        newStatusLabel: target ? roleDisplayLabel(target) : undefined,
+      };
+    }
   } else if (killSet) {
-    const resolveMeta = resolve ? actionMeta(resolve) : {};
     mafia = {
       action: "kill",
       targetName: name(killSet.target_game_player_id),
-      killOutcome: resolveMeta.savedGamePlayerId ? "saved" : "killed",
+      killOutcome: resolveMetaForRound.savedGamePlayerId ? "saved" : "killed",
     };
   } else {
     mafia = { action: "skip" };
@@ -844,6 +891,7 @@ export async function getNightRecap(supabase: Client, gameId: string, round: num
       result: meta.result === "MAFIA" ? "MAFIA" : "NOT MAFIA",
       isGodfather: Boolean(meta.isGodfather),
       checkCount: typeof meta.checkCount === "number" ? meta.checkCount : undefined,
+      causedRecruitCatch: Boolean(recruitCaughtGamePlayerId) && check.target_game_player_id === recruitCaughtGamePlayerId,
     };
   });
   const copsReason = cops.length === 0 ? describeRoleAbsence(players, "cop") : undefined;
@@ -856,8 +904,7 @@ export async function getNightRecap(supabase: Client, gameId: string, round: num
     if (!killSet) {
       outcome = "not_tested";
     } else {
-      const resolveMeta = resolve ? actionMeta(resolve) : {};
-      outcome = resolveMeta.savedGamePlayerId === targetId ? "saved" : "no_save";
+      outcome = resolveMetaForRound.savedGamePlayerId === targetId ? "saved" : "no_save";
     }
     medic = {
       acted: true,

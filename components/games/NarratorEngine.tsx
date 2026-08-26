@@ -22,7 +22,7 @@ import { CurrentMafiaRoster } from "@/components/games/CurrentMafiaRoster";
 import { NightRecapCards } from "@/components/games/NightRecapCards";
 import { RoundInProgress } from "@/components/games/RoundInProgress";
 import { GameTimer } from "@/components/games/GameTimer";
-import { gameTitle, participantDisplay } from "@/lib/utils";
+import { gameTitle, participantDisplay, roleDisplayLabel } from "@/lib/utils";
 import type { Game, GamePhase, GamePlayerWithDetails } from "@/types/domain";
 import type { NightRecap } from "@/lib/services/gameEngine";
 
@@ -281,7 +281,9 @@ function GodfatherStep({
       try {
         await recruitPlayerAction(game.id, godfather!.id, targetId);
         const target = living.find((p) => p.id === targetId)!;
-        setConfirmation(`${participantDisplay(target).name} has been recruited.`);
+        setConfirmation(
+          `Recruit attempted on ${participantDisplay(target).name}. If the Cops catch it tonight, it won't stick.`,
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : "Something went wrong.");
       }
@@ -508,7 +510,7 @@ function MedicStep({ game, players, onDone }: { game: Game; players: GamePlayerW
       ? "No Medic in this game."
       : !medicHolder.alive
         ? "No living Medic remains."
-        : `${participantDisplay(medicHolder).name} has been recruited and is now Dirty Medic — no Civilian protection tonight.`;
+        : `${participantDisplay(medicHolder).name} has been recruited and is now ${roleDisplayLabel(medicHolder)} — no Civilian protection tonight.`;
     return (
       <IneligibleStepNotice
         title="Medic"
