@@ -220,7 +220,7 @@ function mapGameListRow(g: Record<string, unknown>): GameListItem {
 export async function listAllGames(supabase: Client): Promise<GameListItem[]> {
   const { data, error } = await supabase
     .from("games")
-    .select("*, narrator:profiles!narrator_id(full_name, nickname), game_players(count)")
+    .select("*, narrator:profiles!narrator_id(full_name, nickname), game_players!game_players_game_id_fkey(count)")
     .order("created_at", { ascending: false });
   throwIfError(error);
   return (data ?? []).map(mapGameListRow);
@@ -252,7 +252,7 @@ export async function deleteTestGame(supabase: Client, gameId: string): Promise<
 export async function listOfficialGames(supabase: Client): Promise<GameListItem[]> {
   const { data, error } = await supabase
     .from("games")
-    .select("*, narrator:profiles!narrator_id(full_name, nickname), game_players(count)")
+    .select("*, narrator:profiles!narrator_id(full_name, nickname), game_players!game_players_game_id_fkey(count)")
     .eq("status", "completed")
     .eq("is_test", false)
     .order("league_number", { ascending: false });
