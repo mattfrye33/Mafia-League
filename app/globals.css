@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0b0b0d;
+  --surface: #151517;
+  --surface-raised: #1c1c1f;
+  --border: #2a2a2e;
+  --foreground: #f2f0ea;
+  --muted: #a6a3a0;
+  --gold: #c9a227;
+  --gold-soft: #e8cf7a;
+  --red: #8b1e2b;
+  --red-soft: #b23a48;
+  --mafia: #b23a48;
+  --civilian: #3a7d5c;
+  --font-heading: var(--font-oswald);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+  --color-mafia: var(--mafia);
+  --color-civilian: var(--civilian);
+  --font-heading: var(--font-heading);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+
+::selection {
+  background: var(--gold);
+  color: #0b0b0d;
+}
