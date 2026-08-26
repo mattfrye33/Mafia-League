@@ -17,7 +17,10 @@ type Client = SupabaseClient<Database>;
 export async function getPlayerCareerStats(supabase: Client, playerId: string): Promise<PlayerCareerStats> {
   const { data: rows, error } = await supabase
     .from("game_players")
-    .select("*, game:games(id, status, is_test, winner_alignment, official_duration_seconds), role:roles(slug)")
+    // game_players<->games now has 3 FKs (game_id, plus games' two pending_*
+    // columns pointing back at game_players), so the embed must say which —
+    // "games!game_id" — or PostgREST can't tell them apart (PGRST201).
+    .select("*, game:games!game_id(id, status, is_test, winner_alignment, official_duration_seconds), role:roles(slug)")
     .eq("player_id", playerId);
   throwIfError(error);
 
@@ -132,7 +135,7 @@ export async function getRecentGames(supabase: Client, playerId: string, limit =
   const { data, error } = await supabase
     .from("game_players")
     .select(
-      "current_alignment, game:games(id, league_number, status, is_test, winner_alignment, ended_at), role:roles(name)",
+      "current_alignment, game:games!game_id(id, league_number, status, is_test, winner_alignment, ended_at), role:roles(name)",
     )
     .eq("player_id", playerId);
   throwIfError(error);
